@@ -1,0 +1,1179 @@
+zabbix_export:
+  version: "7.0"
+  template_groups:
+    - uuid: 43824767040449cb840deb54f605525e
+      name: Templates/Network devices
+
+  templates:
+    - uuid: bdd29e12030640269c346746fc078539
+      template: "Mikrotik RouterOS by HTTP"
+      name: "Mikrotik RouterOS by HTTP"
+      description: |
+        MikroTik RouterOS monitoring via REST API (HTTP agent).
+        Covers system vitals, interfaces, BGP sessions, OSPF neighbors,
+        hardware health sensors, and default route monitoring.
+
+        Compatible with RouterOS 7.1+ (REST API required).
+        Designed for CCR-class ISP/WAN routers but works on all RouterOS 7.x devices.
+        Unsupported endpoints (BGP, OSPF, health sensors) fail silently.
+
+        Required macros:
+          {$ROS.URL}   - Base URL, e.g. http://192.168.1.1
+          {$ROS.USER}  - REST API username
+          {$ROS.PASS}  - REST API password
+
+        Tested on: RouterOS 7.20.8 / Zabbix 8.0
+
+      groups:
+        - name: Templates/Network devices
+
+      macros:
+        - macro: "{$ROS.URL}"
+          value: "http://192.168.1.1"
+          description: "Base URL of RouterOS device (no trailing slash). Use https:// if SSL is configured."
+        - macro: "{$ROS.USER}"
+          value: "monitoring"
+          description: "REST API username — recommend a read-only account"
+        - macro: "{$ROS.PASS}"
+          value: ""
+          type: SECRET_TEXT
+          description: "REST API password"
+        - macro: "{$ROS.CPU.WARN}"
+          value: "80"
+          description: "CPU load warning threshold (%)"
+        - macro: "{$ROS.CPU.HIGH}"
+          value: "95"
+          description: "CPU load high threshold (%)"
+        - macro: "{$ROS.MEM.WARN}"
+          value: "80"
+          description: "Memory utilization warning threshold (%)"
+        - macro: "{$ROS.MEM.HIGH}"
+          value: "90"
+          description: "Memory utilization high threshold (%)"
+        - macro: "{$ROS.REBOOT.WINDOW}"
+          value: "300"
+          description: "Uptime (seconds) below which unexpected reboot is flagged"
+
+      items:
+        # -------------------------
+        # MASTER ITEMS
+        # -------------------------
+        - uuid: 0c9f7a2fe4cc4243816600d3ee602209
+          name: "ROS: System resource (raw)"
+          type: HTTP_AGENT
+          key: "ros.system.resource.raw"
+          url: "{$ROS.URL}/rest/system/resource"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: system
+          description: "Master item — raw JSON from /rest/system/resource"
+
+        - uuid: e29834b205694fe78419620ab87f03e0
+          name: "ROS: System health (raw)"
+          type: HTTP_AGENT
+          key: "ros.system.health.raw"
+          url: "{$ROS.URL}/rest/system/health"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: hardware
+          description: "Master item — raw JSON from /rest/system/health. Returns empty array on devices without health sensors."
+
+        - uuid: 6b91fe4231b24d4b85d7faeb93c06606
+          name: "ROS: System identity (raw)"
+          type: HTTP_AGENT
+          key: "ros.system.identity.raw"
+          url: "{$ROS.URL}/rest/system/identity"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "3600"
+          history: "1h"
+          tags:
+            - tag: component
+              value: system
+          description: "Master item — raw JSON from /rest/system/identity"
+
+        - uuid: 4fad0980ff2d450f8ccfcb254989f5f9
+          name: "ROS: System routerboard (raw)"
+          type: HTTP_AGENT
+          key: "ros.system.routerboard.raw"
+          url: "{$ROS.URL}/rest/system/routerboard"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "3600"
+          history: "1h"
+          tags:
+            - tag: component
+              value: system
+          description: "Master item — raw JSON from /rest/system/routerboard"
+
+        - uuid: 2bceff1615f647a9b3a8f7f77257d7b9
+          name: "ROS: Interface list (raw)"
+          type: HTTP_AGENT
+          key: "ros.interface.list.raw"
+          url: "{$ROS.URL}/rest/interface"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: network
+          description: "Master item — raw JSON from /rest/interface"
+
+        - uuid: dc197a449dd147d490c6399dcc848022
+          name: "ROS: BGP sessions (raw)"
+          type: HTTP_AGENT
+          key: "ros.bgp.sessions.raw"
+          url: "{$ROS.URL}/rest/routing/bgp/session"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          retrieve_mode: BOTH
+          status_codes: "200,404"
+          tags:
+            - tag: component
+              value: routing
+          description: "Master item — raw JSON from /rest/routing/bgp/session. Returns empty on non-BGP devices."
+
+        - uuid: 3c2dbb916e7e4e73ae09ecb9e3c57401
+          name: "ROS: OSPF neighbors (raw)"
+          type: HTTP_AGENT
+          key: "ros.ospf.neighbors.raw"
+          url: "{$ROS.URL}/rest/routing/ospf/neighbor"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          retrieve_mode: BOTH
+          status_codes: "200,404"
+          tags:
+            - tag: component
+              value: routing
+          description: "Master item — raw JSON from /rest/routing/ospf/neighbor. Returns empty on non-OSPF devices."
+
+        - uuid: 553eccbae6014fb791e9429452b5720e
+          name: "ROS: Default route (raw)"
+          type: HTTP_AGENT
+          key: "ros.default.route.raw"
+          url: "{$ROS.URL}/rest/ip/route?active=true&dst-address=0.0.0.0%2F0"
+          username: "{$ROS.USER}"
+          password: "{$ROS.PASS}"
+          authtype: BASIC
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: routing
+          description: "Master item — active default route from /rest/ip/route"
+
+        # -------------------------
+        # DEPENDENT ITEMS — system.resource
+        # -------------------------
+        - uuid: ca5051bcae264890b31729878b739702
+          name: "ROS: Version"
+          type: DEPENDENT
+          key: "ros.system.version"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.version"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 073d4f49825f481fb56bc11ca7963b36
+          name: "ROS: Board name"
+          type: DEPENDENT
+          key: "ros.system.board.name"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['board-name']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 7a3a0c2cc61e432889c35876eec51dc7
+          name: "ROS: Uptime"
+          type: DEPENDENT
+          key: "ros.system.uptime"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.uptime"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: availability
+
+        - uuid: 6b80622181eb4838b5dfb5c750d61d4a
+          name: "ROS: CPU load (%)"
+          type: DEPENDENT
+          key: "ros.system.cpu.load"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: UNSIGNED
+          units: "%"
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['cpu-load']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: performance
+          triggers:
+            - uuid: 3eccdb57e7ae4e79b15de32fce531a16
+              name: "ROS: High CPU load on {HOST.NAME} (>{$ROS.CPU.HIGH}%)"
+              expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.cpu.load,5m)>{$ROS.CPU.HIGH}"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.cpu.load,5m)<{$ROS.CPU.WARN}"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: performance
+                - tag: component
+                  value: system
+            - uuid: fd6913e9fc2546d1b0560ddf8b2630f3
+              name: "ROS: Elevated CPU load on {HOST.NAME} (>{$ROS.CPU.WARN}%)"
+              expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.cpu.load,5m)>{$ROS.CPU.WARN}"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.cpu.load,5m)<{$ROS.CPU.WARN}"
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: performance
+                - tag: component
+                  value: system
+
+        - uuid: 61aef3455b4c430397d3738f39336964
+          name: "ROS: Total memory"
+          type: DEPENDENT
+          key: "ros.system.memory.total"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: UNSIGNED
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['total-memory']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 6c5281ced3d644b18505139a91065aba
+          name: "ROS: Free memory"
+          type: DEPENDENT
+          key: "ros.system.memory.free"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: UNSIGNED
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['free-memory']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: performance
+
+        - uuid: 9167911f53854759bb10fb2e499a451f
+          name: "ROS: Memory utilization (%)"
+          type: DEPENDENT
+          key: "ros.system.memory.util"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: FLOAT
+          units: "%"
+          trends: "7d"
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var total = parseInt(d["total-memory"]);
+                  var free = parseInt(d["free-memory"]);
+                  return ((total - free) / total * 100).toFixed(2);
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: performance
+          triggers:
+            - uuid: 442c81f94ff94af598068ddd083f98d5
+              name: "ROS: High memory utilization on {HOST.NAME} (>{$ROS.MEM.HIGH}%)"
+              expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.memory.util,5m)>{$ROS.MEM.HIGH}"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.memory.util,5m)<{$ROS.MEM.WARN}"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: performance
+                - tag: component
+                  value: system
+            - uuid: aebe717ae0d64eca94822a8c606a4d43
+              name: "ROS: Elevated memory utilization on {HOST.NAME} (>{$ROS.MEM.WARN}%)"
+              expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.memory.util,5m)>{$ROS.MEM.WARN}"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "avg(/Mikrotik RouterOS by HTTP/ros.system.memory.util,5m)<{$ROS.MEM.WARN}"
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: performance
+                - tag: component
+                  value: system
+
+        - uuid: 70f3ee03dc6a47569cb18e00d8d4f3e9
+          name: "ROS: Total storage"
+          type: DEPENDENT
+          key: "ros.system.storage.total"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: UNSIGNED
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['total-hdd-space']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 41796a4867cb4d9da8be5b4fb341318c
+          name: "ROS: Free storage"
+          type: DEPENDENT
+          key: "ros.system.storage.free"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: UNSIGNED
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['free-hdd-space']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: capacity
+
+        - uuid: 3521d1ac8aa3474b9b805bae644730ae
+          name: "ROS: Bad blocks"
+          type: DEPENDENT
+          key: "ros.system.bad.blocks"
+          master_item:
+            key: "ros.system.resource.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['bad-blocks']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 6cab30f0399e4162be211a550f37b3e2
+              name: "ROS: Storage bad blocks detected on {HOST.NAME}"
+              expression: "last(/Mikrotik RouterOS by HTTP/ros.system.bad.blocks)>0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Mikrotik RouterOS by HTTP/ros.system.bad.blocks)=0"
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: system
+
+        # -------------------------
+        # DEPENDENT ITEMS — system.identity
+        # -------------------------
+        - uuid: 421547ceea0a4f82acb159be851ca4e3
+          name: "ROS: Identity"
+          type: DEPENDENT
+          key: "ros.system.identity"
+          master_item:
+            key: "ros.system.identity.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.name"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        # -------------------------
+        # DEPENDENT ITEMS — system.routerboard
+        # -------------------------
+        - uuid: 2d7336271748422c99949909183b2b7f
+          name: "ROS: Model"
+          type: DEPENDENT
+          key: "ros.system.model"
+          master_item:
+            key: "ros.system.routerboard.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.model"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 485980c37c2f4781b51f2c68f33ef4a2
+          name: "ROS: Serial number"
+          type: DEPENDENT
+          key: "ros.system.serial"
+          master_item:
+            key: "ros.system.routerboard.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['serial-number']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 7d672f879fc043e58747f3d794862e8a
+          name: "ROS: Current firmware"
+          type: DEPENDENT
+          key: "ros.system.firmware.current"
+          master_item:
+            key: "ros.system.routerboard.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['current-firmware']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 3ad5d4a10a7d4707b51f8046fc7ac341
+          name: "ROS: Upgrade firmware"
+          type: DEPENDENT
+          key: "ros.system.firmware.upgrade"
+          master_item:
+            key: "ros.system.routerboard.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$['upgrade-firmware']"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+          triggers:
+            - uuid: 45df639084c14c3bad832c414be8e77c
+              name: "ROS: Firmware upgrade available on {HOST.NAME}"
+              expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.system.firmware.current)
+                <> last(/Mikrotik RouterOS by HTTP/ros.system.firmware.upgrade)
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.system.firmware.current)
+                = last(/Mikrotik RouterOS by HTTP/ros.system.firmware.upgrade)
+              priority: INFO
+              tags:
+                - tag: scope
+                  value: inventory
+                - tag: component
+                  value: system
+
+        # -------------------------
+        # DEPENDENT ITEMS — default.route
+        # -------------------------
+        - uuid: f1ef459f5ebf46e1a1f7139f83c38e65
+          name: "ROS: Default route active"
+          type: DEPENDENT
+          key: "ros.default.route.active"
+          master_item:
+            key: "ros.default.route.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  try {
+                    var arr = JSON.parse(value);
+                    return arr.length > 0 ? 1 : 0;
+                  } catch(e) {
+                    return 0;
+                  }
+          tags:
+            - tag: component
+              value: routing
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 4d7a21b007d64ceea0b505d95e07e9ca
+              name: "ROS: No active default route on {HOST.NAME}"
+              expression: "last(/Mikrotik RouterOS by HTTP/ros.default.route.active)=0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Mikrotik RouterOS by HTTP/ros.default.route.active)=1"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: routing
+
+        - uuid: f32913147d484ce896cdf9adfdb47f48
+          name: "ROS: Default route gateway"
+          type: DEPENDENT
+          key: "ros.default.route.gateway"
+          master_item:
+            key: "ros.default.route.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$[0].gateway"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "none"
+          tags:
+            - tag: component
+              value: routing
+            - tag: scope
+              value: inventory
+
+      # -------------------------
+      # LLD RULES
+      # -------------------------
+      discovery_rules:
+        # --- Health sensor discovery ---
+        - uuid: 01ffcc7b763d4e6e899286b638d4e584
+          name: "ROS: Health sensor discovery"
+          type: DEPENDENT
+          key: "ros.health.discovery"
+          master_item:
+            key: "ros.system.health.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$[*]"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "[]"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#SENSOR.NAME}"
+              path: "$.name"
+            - lld_macro: "{#SENSOR.TYPE}"
+              path: "$.type"
+          item_prototypes:
+            - uuid: f3f46a80d37a4898b2adc341b9e980f5
+              name: "ROS: Sensor [{#SENSOR.NAME}] value"
+              type: DEPENDENT
+              key: "ros.health.sensor[{#SENSOR.NAME}]"
+              master_item:
+                key: "ros.system.health.raw"
+              value_type: FLOAT
+              units: "{#SENSOR.TYPE}"
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#SENSOR.NAME}')].value.first()"
+              tags:
+                - tag: component
+                  value: hardware
+                - tag: scope
+                  value: performance
+
+        # --- Interface discovery ---
+        - uuid: 21b45d5c3c414bbda0cbf0ac91301e35
+          name: "ROS: Interface discovery"
+          type: DEPENDENT
+          key: "ros.interface.discovery"
+          master_item:
+            key: "ros.interface.list.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  return JSON.stringify(JSON.parse(value));
+          lld_macro_paths:
+            - lld_macro: "{#IF_NAME}"
+              path: "$.name"
+            - lld_macro: "{#IF_TYPE}"
+              path: "$.type"
+            - lld_macro: "{#IF_DISABLED}"
+              path: "$.disabled"
+            - lld_macro: "{#IF_COMMENT}"
+              path: "$.comment"
+            - lld_macro: "{#IF_ID}"
+              path: "$['.id']"
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: "{#IF_DISABLED}"
+                value: "^true$"
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
+          item_prototypes:
+            - uuid: ec576960d35147b591208d7cf144ded7
+              name: "ROS: Interface [{#IF_NAME}] raw stats"
+              type: HTTP_AGENT
+              key: "ros.iface.stats.raw[{#IF_NAME}]"
+              url: "{$ROS.URL}/rest/interface"
+              username: "{$ROS.USER}"
+              password: "{$ROS.PASS}"
+              authtype: BASIC
+              query_fields:
+                - name: ".proplist"
+                  value: "name,type,running,disabled,rx-byte,tx-byte,rx-error,tx-error,rx-drop,tx-drop,tx-queue-drop,link-downs,comment"
+                - name: "name"
+                  value: "{#IF_NAME}"
+              value_type: TEXT
+              trends: "0"
+              delay: "60"
+              history: "1h"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[0]"
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 864f8855f3b245fe8680d98d130b10da
+              name: "ROS: Interface [{#IF_NAME}] running"
+              type: DEPENDENT
+              key: "ros.iface.running[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.running"
+                - type: BOOL_TO_DECIMAL
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 40013355d9f644ffbc527223aa4c6f8c
+              name: "ROS: Interface [{#IF_NAME}] traffic in"
+              type: DEPENDENT
+              key: "ros.iface.rx.bps[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              units: bps
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['rx-byte'] || 0;
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - "8"
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 377cf795aea34891b750aaab4ea57646
+              name: "ROS: Interface [{#IF_NAME}] traffic out"
+              type: DEPENDENT
+              key: "ros.iface.tx.bps[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              units: bps
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['tx-byte'] || 0;
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - "8"
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: ac56317dce6e410dad3707f544a4e904
+              name: "ROS: Interface [{#IF_NAME}] RX errors"
+              type: DEPENDENT
+              key: "ros.iface.rx.errors[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['rx-error'] || 0;
+                - type: CHANGE_PER_SECOND
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 0604db9db7c2456880075b55d8cacbe4
+              name: "ROS: Interface [{#IF_NAME}] TX errors"
+              type: DEPENDENT
+              key: "ros.iface.tx.errors[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['tx-error'] || 0;
+                - type: CHANGE_PER_SECOND
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 637bd3adac874e0aad9a18e907471025
+              name: "ROS: Interface [{#IF_NAME}] RX drops"
+              type: DEPENDENT
+              key: "ros.iface.rx.drops[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['rx-drop'] || 0;
+                - type: CHANGE_PER_SECOND
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 720af1a2cb2248ff99c6db3e3643d769
+              name: "ROS: Interface [{#IF_NAME}] TX drops"
+              type: DEPENDENT
+              key: "ros.iface.tx.drops[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['tx-drop'] || 0;
+                - type: CHANGE_PER_SECOND
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: 6efb8d9eab0a4253afe9447feb4f5563
+              name: "ROS: Interface [{#IF_NAME}] TX queue drops"
+              type: DEPENDENT
+              key: "ros.iface.tx.queue.drops[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: FLOAT
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['tx-queue-drop'] || 0;
+                - type: CHANGE_PER_SECOND
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+            - uuid: caf20447d28f4b5f9e951e6ed3b77864
+              name: "ROS: Interface [{#IF_NAME}] link downs"
+              type: DEPENDENT
+              key: "ros.iface.link.downs[{#IF_NAME}]"
+              master_item:
+                key: "ros.iface.stats.raw[{#IF_NAME}]"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['link-downs'] || 0;
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: "{#IF_NAME}"
+
+          trigger_prototypes:
+            - uuid: 606fee21f2b34e76a56302dd67a73125
+              name: "ROS: Interface [{#IF_NAME}] ({#IF_COMMENT}) link down on {HOST.NAME}"
+              expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.iface.running[{#IF_NAME}])=0
+                and change(/Mikrotik RouterOS by HTTP/ros.iface.running[{#IF_NAME}])<0
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: interface
+
+            - uuid: 088109fc0485440fad24a6fae5efbfa9
+              name: "ROS: Interface [{#IF_NAME}] link flapping on {HOST.NAME}"
+              expression: "change(/Mikrotik RouterOS by HTTP/ros.iface.link.downs[{#IF_NAME}])>0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "change(/Mikrotik RouterOS by HTTP/ros.iface.link.downs[{#IF_NAME}])=0"
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: interface
+
+        # --- BGP session discovery ---
+        - uuid: 4f4087fa82ed460384769c6d0df8d230
+          name: "ROS: BGP session discovery"
+          type: DEPENDENT
+          key: "ros.bgp.discovery"
+          master_item:
+            key: "ros.bgp.sessions.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  try {
+                    var arr = JSON.parse(value);
+                    return JSON.stringify(arr);
+                  } catch(e) {
+                    return "[]";
+                  }
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#BGP.SESSION}"
+              path: "$.name"
+            - lld_macro: "{#BGP.REMOTE.AS}"
+              path: "$.remote.as"
+            - lld_macro: "{#BGP.REMOTE.ADDRESS}"
+              path: "$.remote.address"
+          item_prototypes:
+            - uuid: ff14d69d47c24fa89adbfeae7e40d9c1
+              name: "ROS: BGP [{#BGP.SESSION}] established"
+              type: DEPENDENT
+              key: "ros.bgp.established[{#BGP.SESSION}]"
+              master_item:
+                key: "ros.bgp.sessions.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      try {
+                        var arr = JSON.parse(value);
+                        for (var i = 0; i < arr.length; i++) {
+                          if (arr[i].name === '{#BGP.SESSION}') return 1;
+                        }
+                        return 0;
+                      } catch(e) { return 0; }
+              tags:
+                - tag: component
+                  value: routing
+                - tag: scope
+                  value: availability
+
+            - uuid: fead0208e6ee4a4a8961bd02b3ecfb7b
+              name: "ROS: BGP [{#BGP.SESSION}] prefix count"
+              type: DEPENDENT
+              key: "ros.bgp.prefix.count[{#BGP.SESSION}]"
+              master_item:
+                key: "ros.bgp.sessions.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#BGP.SESSION}')].prefix-count.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "0"
+              tags:
+                - tag: component
+                  value: routing
+                - tag: scope
+                  value: performance
+
+            - uuid: bbe445c636994c75a09625b571332839
+              name: "ROS: BGP [{#BGP.SESSION}] uptime"
+              type: DEPENDENT
+              key: "ros.bgp.uptime[{#BGP.SESSION}]"
+              master_item:
+                key: "ros.bgp.sessions.raw"
+              value_type: CHAR
+              trends: "0"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#BGP.SESSION}')].uptime.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "down"
+              tags:
+                - tag: component
+                  value: routing
+                - tag: scope
+                  value: availability
+
+          trigger_prototypes:
+            - uuid: b16504b8163345399e14698e8a21672f
+              name: "ROS: BGP session [{#BGP.SESSION}] is not established on {HOST.NAME}"
+              expression: "last(/Mikrotik RouterOS by HTTP/ros.bgp.established[{#BGP.SESSION}])=0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Mikrotik RouterOS by HTTP/ros.bgp.established[{#BGP.SESSION}])=1"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: routing
+
+            - uuid: 7d21793c8d8847a2bfa533f61201e9bf
+              name: "ROS: BGP session [{#BGP.SESSION}] prefix count dropped on {HOST.NAME}"
+              expression: "change(/Mikrotik RouterOS by HTTP/ros.bgp.prefix.count[{#BGP.SESSION}])<-100"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "change(/Mikrotik RouterOS by HTTP/ros.bgp.prefix.count[{#BGP.SESSION}])>=-100"
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: routing
+
+        # --- OSPF neighbor discovery ---
+        - uuid: b163a2bebe6241d5a051b512ee5ffada
+          name: "ROS: OSPF neighbor discovery"
+          type: DEPENDENT
+          key: "ros.ospf.discovery"
+          master_item:
+            key: "ros.ospf.neighbors.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  try {
+                    var arr = JSON.parse(value);
+                    return JSON.stringify(arr);
+                  } catch(e) {
+                    return "[]";
+                  }
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#OSPF.ROUTER.ID}"
+              path: "$['router-id']"
+            - lld_macro: "{#OSPF.ADDRESS}"
+              path: "$.address"
+            - lld_macro: "{#OSPF.INTERFACE}"
+              path: "$.interface"
+          item_prototypes:
+            - uuid: c0299681a1704a9fa9b8d3516eb7489b
+              name: "ROS: OSPF [{#OSPF.ROUTER.ID}] state"
+              type: DEPENDENT
+              key: "ros.ospf.state[{#OSPF.ROUTER.ID}]"
+              master_item:
+                key: "ros.ospf.neighbors.raw"
+              value_type: CHAR
+              trends: "0"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.['router-id']=='{#OSPF.ROUTER.ID}')].state.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "down"
+              tags:
+                - tag: component
+                  value: routing
+                - tag: scope
+                  value: availability
+
+            - uuid: 359011f06aef4b0b8c82deb0f98e8c11
+              name: "ROS: OSPF [{#OSPF.ROUTER.ID}] state change count"
+              type: DEPENDENT
+              key: "ros.ospf.state.changes[{#OSPF.ROUTER.ID}]"
+              master_item:
+                key: "ros.ospf.neighbors.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.['router-id']=='{#OSPF.ROUTER.ID}')].state-changes.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "0"
+              tags:
+                - tag: component
+                  value: routing
+                - tag: scope
+                  value: availability
+
+          trigger_prototypes:
+            - uuid: e8c040fec8dc47288d716bb4ec8261b8
+              name: "ROS: OSPF neighbor [{#OSPF.ROUTER.ID}] is not Full on {HOST.NAME}"
+              expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.ospf.state[{#OSPF.ROUTER.ID}])<>"Full"
+                and last(/Mikrotik RouterOS by HTTP/ros.ospf.state[{#OSPF.ROUTER.ID}])<>"down"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.ospf.state[{#OSPF.ROUTER.ID}])="Full"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: routing
+
+            - uuid: 9ae72a093ac54274bd1c632e14acd8f1
+              name: "ROS: OSPF neighbor [{#OSPF.ROUTER.ID}] went down on {HOST.NAME}"
+              expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.ospf.state[{#OSPF.ROUTER.ID}])="down"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Mikrotik RouterOS by HTTP/ros.ospf.state[{#OSPF.ROUTER.ID}])<>"down"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: routing
+
+            - uuid: e7e1fa2f01964a5caf959a35ba59c55f
+              name: "ROS: OSPF neighbor [{#OSPF.ROUTER.ID}] state flapping on {HOST.NAME}"
+              expression: "change(/Mikrotik RouterOS by HTTP/ros.ospf.state.changes[{#OSPF.ROUTER.ID}])>0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "change(/Mikrotik RouterOS by HTTP/ros.ospf.state.changes[{#OSPF.ROUTER.ID}])=0"
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: routing

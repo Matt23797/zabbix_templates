@@ -1,0 +1,513 @@
+zabbix_export:
+  version: '8.0'
+  template_groups:
+    - uuid: 2f85bf1e3bc243f5a2ecf4d61b593e14
+      name: 'Templates/Network devices'
+  templates:
+    - uuid: a7a4cb6e15ff4d3883d3e110ba253fbd
+      template: 'MikroTik by REST API'
+      name: 'MikroTik by REST API'
+      description: |
+        Monitors a MikroTik router via the RouterOS REST API (HTTP agent items). Requires RouterOS 7.1+ with the REST API enabled (www-ssl or www service). Create a read-only API user on the device and set the macros below.
+        Endpoints used:
+          GET /rest/system/resource
+          GET /rest/system/routerboard
+          GET /rest/interface
+          GET /rest/ip/address
+          GET /rest/ip/dhcp-server/lease
+          GET /rest/ip/firewall/connection
+          GET /rest/ip/arp
+      groups:
+        - name: 'Templates/Network devices'
+      items:
+        - uuid: dabbd977ea4142778ec0b0ef2ea64dcd
+          name: 'CPU load'
+          type: DEPENDENT
+          key: mikrotik.cpu.load
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.[''cpu-load'']'
+            - type: IN_RANGE
+              parameters:
+                - '0'
+                - '100'
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: cpu
+          triggers:
+            - uuid: 4b2380f4817c47cfa60cc89598bd7592
+              expression: 'avg(/MikroTik by REST API/mikrotik.cpu.load,5m)>{$CPU_HIGH}'
+              name: 'High CPU usage (>{$CPU_HIGH}%)'
+              priority: WARNING
+        - uuid: 1ce2637ee41f406086019e8f164580f1
+          name: 'CPU temperature'
+          type: DEPENDENT
+          key: mikrotik.cpu.temperature
+          value_type: FLOAT
+          units: °C
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var sensors = JSON.parse(value);
+                  for (var i = 0; i < sensors.length; i++) {
+                    if (sensors[i].name === 'cpu-temperature') {
+                      return parseFloat(sensors[i].value);
+                    }
+                  }
+                  throw 'cpu-temperature sensor not found';
+          master_item:
+            key: mikrotik.system.health.raw
+          tags:
+            - tag: component
+              value: cpu
+          triggers:
+            - uuid: e287e8fc60b1442aa3a25e57f6a1a2e8
+              expression: 'avg(/MikroTik by REST API/mikrotik.cpu.temperature,5m)>{$TEMP_HIGH}'
+              name: 'High CPU temperature (>{$TEMP_HIGH}°C)'
+              priority: AVERAGE
+        - uuid: 3521d817a74b493eb2db061631b093b7
+          name: 'DHCP active lease count'
+          type: DEPENDENT
+          key: mikrotik.dhcp.leases.active
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var leases = JSON.parse(value);
+                  return leases.filter(function(l){ return l.status === 'bound'; }).length;
+          master_item:
+            key: mikrotik.dhcp.leases.raw
+          tags:
+            - tag: component
+              value: dhcp
+        - uuid: faf53fb32c7947ec8c989ee5c5694187
+          name: 'DHCP leases: raw JSON'
+          type: HTTP_AGENT
+          key: mikrotik.dhcp.leases.raw
+          delay: '120'
+          history: 1h
+          value_type: TEXT
+          authtype: BASIC
+          username: '{$API_USER}'
+          password: '{$API_PASSWORD}'
+          url: '{$API_SCHEME}://{$API_HOST}:{$API_PORT}/rest/ip/dhcp-server/lease'
+          tags:
+            - tag: component
+              value: dhcp
+        - uuid: 7081d38554ee41ac8cbf6688e8bf4d52
+          name: 'Active firewall connections'
+          type: HTTP_AGENT
+          key: mikrotik.fw.connections
+          delay: '60'
+          history: 7d
+          authtype: BASIC
+          username: '{$API_USER}'
+          password: '{$API_PASSWORD}'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'return JSON.parse(value).length;'
+          url: '{$API_SCHEME}://{$API_HOST}:{$API_PORT}/rest/ip/firewall/connection'
+          query_fields:
+            - name: .proplist
+              value: .id
+          tags:
+            - tag: component
+              value: firewall
+        - uuid: 5dc653dd9d174f7aa42bec97da417cb1
+          name: 'Interfaces: raw JSON'
+          type: HTTP_AGENT
+          key: mikrotik.interfaces.raw
+          delay: '60'
+          history: 1h
+          value_type: TEXT
+          authtype: BASIC
+          username: '{$API_USER}'
+          password: '{$API_PASSWORD}'
+          url: '{$API_SCHEME}://{$API_HOST}:{$API_PORT}/rest/interface'
+          tags:
+            - tag: component
+              value: interface
+        - uuid: 9114e9e80a0f48a48dd120b626674f94
+          name: 'Memory: free'
+          type: DEPENDENT
+          key: mikrotik.memory.free
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.[''free-memory'']'
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: memory
+        - uuid: 53693ddd19cd4b1a987e5e2974fa5d6c
+          name: 'Memory: used %'
+          type: CALCULATED
+          key: mikrotik.memory.pused
+          delay: '60'
+          value_type: FLOAT
+          units: '%'
+          params: '(last(//mikrotik.memory.total)-last(//mikrotik.memory.free))/last(//mikrotik.memory.total)*100'
+          tags:
+            - tag: component
+              value: memory
+          triggers:
+            - uuid: 3e9fd9d2266e4554a5bc16932368b7c3
+              expression: 'avg(/MikroTik by REST API/mikrotik.memory.pused,5m)>{$MEM_HIGH}'
+              name: 'High memory usage (>{$MEM_HIGH}%)'
+              priority: AVERAGE
+        - uuid: acdbfdb504f4401e945b5d9f9fa7dad6
+          name: 'Memory: total'
+          type: DEPENDENT
+          key: mikrotik.memory.total
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.[''total-memory'']'
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: memory
+        - uuid: 2c33b804af99447f803f5a7145d7ef68
+          name: 'Storage: free HDD space'
+          type: DEPENDENT
+          key: mikrotik.storage.free
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.[''free-hdd-space'']'
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 11acd90357ac47e984ca1fb0a055e526
+          name: 'Storage: total HDD space'
+          type: DEPENDENT
+          key: mikrotik.storage.total
+          units: B
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.[''total-hdd-space'']'
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 035cb9e4a6cb436895bc449d407bec64
+          name: 'System health: raw JSON'
+          type: HTTP_AGENT
+          key: mikrotik.system.health.raw
+          delay: '60'
+          history: 1h
+          value_type: TEXT
+          authtype: BASIC
+          username: '{$API_USER}'
+          password: '{$API_PASSWORD}'
+          url: '{$API_SCHEME}://{$API_HOST}:{$API_PORT}/rest/system/health'
+          tags:
+            - tag: component
+              value: system
+        - uuid: b5ad98b1ee214967b04c2c9b7a9e52f5
+          name: 'System resource: raw JSON'
+          type: HTTP_AGENT
+          key: mikrotik.system.resource.raw
+          delay: '60'
+          history: 1h
+          value_type: TEXT
+          authtype: BASIC
+          username: '{$API_USER}'
+          password: '{$API_PASSWORD}'
+          url: '{$API_SCHEME}://{$API_HOST}:{$API_PORT}/rest/system/resource'
+          tags:
+            - tag: component
+              value: system
+        - uuid: cc8cda8c2510474cb7349a010369a6e9
+          name: Uptime
+          type: DEPENDENT
+          key: mikrotik.system.uptime
+          units: uptime
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.uptime
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var s = value;
+                  var total = 0;
+                  var m;
+                  if (m = s.match(/(\d+)w/)) total += parseInt(m[1]) * 604800;
+                  if (m = s.match(/(\d+)d/)) total += parseInt(m[1]) * 86400;
+                  if (m = s.match(/(\d+)h/)) total += parseInt(m[1]) * 3600;
+                  if (m = s.match(/(\d+)m/)) total += parseInt(m[1]) * 60;
+                  if (m = s.match(/(\d+)s/)) total += parseInt(m[1]);
+                  return total;
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: 2e82fa82302e421dafce29c711578e14
+              expression: 'last(/MikroTik by REST API/mikrotik.system.uptime)<600'
+              name: 'Device has been restarted (uptime < 10m)'
+              priority: WARNING
+        - uuid: f03675437cfa4fff9d42ca177bd83e8a
+          name: 'RouterOS version'
+          type: DEPENDENT
+          key: mikrotik.system.version
+          value_type: CHAR
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.version
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          master_item:
+            key: mikrotik.system.resource.raw
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: 296e52e2aa214aac9aac9b3d9183263b
+              expression: 'change(/MikroTik by REST API/mikrotik.system.version)<>0'
+              name: 'RouterOS version changed'
+              priority: INFO
+      discovery_rules:
+        - uuid: 2b41adefc7334a29983ac578854e0f0f
+          name: 'Network interface discovery'
+          type: DEPENDENT
+          key: mikrotik.if.discovery
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#IF_DISABLED}'
+                value: ^true$
+                operator: NOT_MATCHES_REGEX
+          item_prototypes:
+            - uuid: 133c76f73e4442fbb7d049335b04b0dd
+              name: 'Interface [{#IF_NAME}]: running'
+              type: DEPENDENT
+              key: 'mikrotik.if.running[{#IF_NAME}]'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.running
+                - type: BOOL_TO_DECIMAL
+              master_item:
+                key: 'mikrotik.if.stats.raw[{#IF_NAME}]'
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: '{#IF_NAME}'
+              trigger_prototypes:
+                - uuid: a67cbd46088f4ef0b1cf698201685484
+                  expression: 'last(/MikroTik by REST API/mikrotik.if.running[{#IF_NAME}])=0 and change(/MikroTik by REST API/mikrotik.if.running[{#IF_NAME}])<>0'
+                  name: 'Interface [{#IF_NAME}] ({#IF_COMMENT}): link down'
+                  priority: AVERAGE
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: e06514a6de8c46cdb6d7e0a73c93b71c
+              name: 'Interface [{#IF_NAME}]: traffic in'
+              type: DEPENDENT
+              key: 'mikrotik.if.rx.bytes[{#IF_NAME}]'
+              units: bps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.[''rx-byte'']'
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+              master_item:
+                key: 'mikrotik.if.stats.raw[{#IF_NAME}]'
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: '{#IF_NAME}'
+            - uuid: b9e1f9de3b844aafa13ec940db71ba57
+              name: 'Interface [{#IF_NAME}]: RX errors'
+              type: DEPENDENT
+              key: 'mikrotik.if.rx.errors[{#IF_NAME}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['rx-error'] || 0;
+                - type: CHANGE_PER_SECOND
+              master_item:
+                key: 'mikrotik.if.stats.raw[{#IF_NAME}]'
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: '{#IF_NAME}'
+            - uuid: 4400d3e7bf824082be3139924cc5f497
+              name: 'Interface [{#IF_NAME}]: raw stats'
+              type: HTTP_AGENT
+              key: 'mikrotik.if.stats.raw[{#IF_NAME}]'
+              delay: '60'
+              history: 1h
+              value_type: TEXT
+              authtype: BASIC
+              username: '{$API_USER}'
+              password: '{$API_PASSWORD}'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$[0]'
+              url: '{$API_SCHEME}://{$API_HOST}:{$API_PORT}/rest/interface'
+              query_fields:
+                - name: .proplist
+                  value: 'name,type,running,disabled,rx-byte,tx-byte,rx-error,tx-error,comment'
+                - name: name
+                  value: '{#IF_NAME}'
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: '{#IF_NAME}'
+            - uuid: 7f4efe2ad9b4416cbf10f4f2ed86c31b
+              name: 'Interface [{#IF_NAME}]: traffic out'
+              type: DEPENDENT
+              key: 'mikrotik.if.tx.bytes[{#IF_NAME}]'
+              units: bps
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.[''tx-byte'']'
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+              master_item:
+                key: 'mikrotik.if.stats.raw[{#IF_NAME}]'
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: '{#IF_NAME}'
+            - uuid: 336fc1b3d91c4a5aaa4177a95d344ae2
+              name: 'Interface [{#IF_NAME}]: TX errors'
+              type: DEPENDENT
+              key: 'mikrotik.if.tx.errors[{#IF_NAME}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var obj = JSON.parse(value);
+                      return obj['tx-error'] || 0;
+                - type: CHANGE_PER_SECOND
+              master_item:
+                key: 'mikrotik.if.stats.raw[{#IF_NAME}]'
+              tags:
+                - tag: component
+                  value: interface
+                - tag: interface
+                  value: '{#IF_NAME}'
+          master_item:
+            key: mikrotik.interfaces.raw
+          lld_macro_paths:
+            - lld_macro: '{#IF_COMMENT}'
+              path: $.comment
+            - lld_macro: '{#IF_DISABLED}'
+              path: $.disabled
+            - lld_macro: '{#IF_ID}'
+              path: '$[''.id'']'
+            - lld_macro: '{#IF_NAME}'
+              path: $.name
+            - lld_macro: '{#IF_TYPE}'
+              path: $.type
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  // REST API returns an array; pass it through as-is for LLD
+                  return JSON.stringify(JSON.parse(value));
+      macros:
+        - macro: '{$API_HOST}'
+          value: 192.168.88.1
+          description: 'Router IP (or hostname) reachable from Zabbix proxy/server'
+        - macro: '{$API_PASSWORD}'
+          type: SECRET_TEXT
+          description: 'Password for {$API_USER}'
+        - macro: '{$API_PORT}'
+          value: '80'
+          description: 'REST API port — 80 for http, 443 for https (api-ssl)'
+        - macro: '{$API_SCHEME}'
+          value: http
+          description: 'http or https'
+        - macro: '{$API_USER}'
+          value: zabbix
+          description: 'Read-only RouterOS user for REST API'
+        - macro: '{$CPU_HIGH}'
+          value: '90'
+          description: 'CPU usage % trigger threshold'
+        - macro: '{$IF_ERRORS_WARN}'
+          value: '2'
+          description: 'Interface error rate (pps) warning threshold'
+        - macro: '{$MEM_HIGH}'
+          value: '90'
+          description: 'Memory usage % trigger threshold'
+        - macro: '{$TEMP_HIGH}'
+          value: '70'
+          description: 'CPU temperature trigger threshold in Celsius'
+  graphs:
+    - uuid: a14889128cc541489d0de63a0ec841d6
+      name: 'CPU and Memory'
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: FF5733
+          item:
+            host: 'MikroTik by REST API'
+            key: mikrotik.cpu.load
+        - sortorder: '1'
+          drawtype: GRADIENT_LINE
+          color: 3498DB
+          item:
+            host: 'MikroTik by REST API'
+            key: mikrotik.memory.pused
+    - uuid: 940504a8830842499e3872c5b3c96c8f
+      name: 'CPU temperature'
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: E74C3C
+          item:
+            host: 'MikroTik by REST API'
+            key: mikrotik.cpu.temperature
+    - uuid: d9b3475580914afc9a3099ae4be6c2ee
+      name: 'DHCP active leases'
+      graph_items:
+        - drawtype: FILLED_REGION
+          color: 9B59B6
+          item:
+            host: 'MikroTik by REST API'
+            key: mikrotik.dhcp.leases.active
+    - uuid: 783c6a86af724cd4ae421fd1c3b4e3ad
+      name: 'Firewall connections'
+      graph_items:
+        - drawtype: FILLED_REGION
+          color: 2ECC71
+          item:
+            host: 'MikroTik by REST API'
+            key: mikrotik.fw.connections

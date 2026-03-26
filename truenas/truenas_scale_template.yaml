@@ -1,0 +1,1178 @@
+zabbix_export:
+  version: "8.0"
+  template_groups:
+    - uuid: 4d60a917eeb14c348876c178ac86acc5
+      name: Templates/Storage
+
+  templates:
+    - uuid: 778dd798c5e64d62be2c9106f923da60
+      template: "Template Storage TrueNAS SCALE"
+      name: "Template Storage TrueNAS SCALE"
+      description: |
+        TrueNAS SCALE monitoring via HTTP agent (REST API v2).
+        Compatible with TrueNAS SCALE 24.10 and 25.10.x (Goldeye).
+
+        NOTE: The TrueNAS REST API is deprecated as of 25.04 and planned for
+        removal in TrueNAS 26. A v2 of this template using the WebSocket
+        JSON-RPC API is planned for future compatibility.
+
+        Required macros:
+          {$TRUENAS.URL}     - Base URL, e.g. https://192.168.1.100
+          {$TRUENAS.API.KEY} - API key generated under Credentials > API Keys
+
+        Tested on: TrueNAS SCALE 25.10.2.1 (Goldeye)
+
+      groups:
+        - name: Templates/Storage
+
+      macros:
+        - macro: "{$TRUENAS.URL}"
+          value: "https://truenas.local"
+          description: "Base URL of TrueNAS instance (no trailing slash)"
+        - macro: "{$TRUENAS.API.KEY}"
+          value: ""
+          description: "TrueNAS API key — generate under Credentials > API Keys"
+        - macro: "{$TRUENAS.POOL.CAPACITY.WARN}"
+          value: "80"
+          description: "Pool capacity warning threshold (%)"
+        - macro: "{$TRUENAS.POOL.CAPACITY.HIGH}"
+          value: "90"
+          description: "Pool capacity high threshold (%)"
+        - macro: "{$TRUENAS.LOAD.WARN}"
+          value: "2"
+          description: "Load average (1m) warning threshold"
+        - macro: "{$TRUENAS.LOAD.HIGH}"
+          value: "4"
+          description: "Load average (1m) high threshold"
+        - macro: "{$TRUENAS.REBOOT.WINDOW}"
+          value: "300"
+          description: "Uptime threshold (seconds) to detect unexpected reboot"
+
+      items:
+        # -------------------------
+        # MASTER ITEMS
+        # -------------------------
+        - uuid: c73f3e394f554cf0b1b9d71b3c621b2e
+          name: "TrueNAS: System info (raw)"
+          type: HTTP_AGENT
+          key: "truenas.system.info.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/system/info"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: system
+          description: "Master item — raw JSON from /api/v2.0/system/info"
+
+        - uuid: 6890c09a3c3d4126a01461e38803dddd
+          name: "TrueNAS: Pool list (raw)"
+          type: HTTP_AGENT
+          key: "truenas.pool.list.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/pool"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "120"
+          history: "1h"
+          tags:
+            - tag: component
+              value: storage
+          description: "Master item — raw JSON from /api/v2.0/pool"
+
+        - uuid: c342cf20cce04903b7703b0854574dff
+          name: "TrueNAS: Disk list (raw)"
+          type: HTTP_AGENT
+          key: "truenas.disk.list.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/disk"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "300"
+          history: "1h"
+          tags:
+            - tag: component
+              value: storage
+          description: "Master item — raw JSON from /api/v2.0/disk"
+
+        - uuid: 7f28a834bcf54e55bb41565772525618
+          name: "TrueNAS: Alert list (raw)"
+          type: HTTP_AGENT
+          key: "truenas.alert.list.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/alert/list"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: system
+          description: "Master item — raw JSON from /api/v2.0/alert/list"
+
+        # -------------------------
+        # DEPENDENT ITEMS — system.info
+        # -------------------------
+        - uuid: 414185c21cdd4b1a8e56af03ded848bc
+          name: "TrueNAS: Version"
+          type: DEPENDENT
+          key: "truenas.system.version"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.version"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 5fddd31417334df9b781ed679fa8ea4d
+          name: "TrueNAS: Hostname"
+          type: DEPENDENT
+          key: "truenas.system.hostname"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.hostname"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 068e0c8fd9db456c9927dfde6a4063c8
+          name: "TrueNAS: Uptime"
+          type: DEPENDENT
+          key: "truenas.system.uptime"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: FLOAT
+          units: s
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.uptime_seconds"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 13746f7727ec4bbe9a0892a02100529f
+              name: "TrueNAS: Unexpected reboot detected on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.system.uptime)<{$TRUENAS.REBOOT.WINDOW} and change(/Template Storage TrueNAS SCALE/truenas.system.uptime)<0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.system.uptime)>{$TRUENAS.REBOOT.WINDOW}"
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: system
+
+        - uuid: 1972325b2b0a4cab8370005ff353a48f
+          name: "TrueNAS: Physical memory"
+          type: DEPENDENT
+          key: "truenas.system.physmem"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: FLOAT
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.physmem"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: 5ea5021bbc6047f798e31899b532972c
+          name: "TrueNAS: CPU cores"
+          type: DEPENDENT
+          key: "truenas.system.cores"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.cores"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        - uuid: c4f76e2224d342b0ac3d0672133a761d
+          name: "TrueNAS: Load average (1m)"
+          type: DEPENDENT
+          key: "truenas.system.loadavg.1m"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: FLOAT
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.loadavg[0]"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: performance
+          triggers:
+            - uuid: 365a4505992f4df6b87d8203d74985e0
+              name: "TrueNAS: High load average on {HOST.NAME} (>{$TRUENAS.LOAD.HIGH})"
+              expression: "avg(/Template Storage TrueNAS SCALE/truenas.system.loadavg.1m,5m)>{$TRUENAS.LOAD.HIGH}"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "avg(/Template Storage TrueNAS SCALE/truenas.system.loadavg.1m,5m)<{$TRUENAS.LOAD.WARN}"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: performance
+                - tag: component
+                  value: system
+            - uuid: c76871db322e4d368e0ab7ae68f7fe3e
+              name: "TrueNAS: Elevated load average on {HOST.NAME} (>{$TRUENAS.LOAD.WARN})"
+              expression: "avg(/Template Storage TrueNAS SCALE/truenas.system.loadavg.1m,5m)>{$TRUENAS.LOAD.WARN}"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "avg(/Template Storage TrueNAS SCALE/truenas.system.loadavg.1m,5m)<{$TRUENAS.LOAD.WARN}"
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: performance
+                - tag: component
+                  value: system
+
+        - uuid: 6c5230555957477faa842ca9916adf15
+          name: "TrueNAS: Load average (5m)"
+          type: DEPENDENT
+          key: "truenas.system.loadavg.5m"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: FLOAT
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.loadavg[1]"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: performance
+
+        - uuid: a4dae6349ff74ca88c62b24c362ba2b0
+          name: "TrueNAS: Load average (15m)"
+          type: DEPENDENT
+          key: "truenas.system.loadavg.15m"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: FLOAT
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.loadavg[2]"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: performance
+
+        - uuid: f23b798964a24108adf6541e1413e77c
+          name: "TrueNAS: ECC memory"
+          type: DEPENDENT
+          key: "truenas.system.ecc_memory"
+          master_item:
+            key: "truenas.system.info.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.ecc_memory"
+            - type: BOOL_TO_DECIMAL
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: inventory
+
+        # -------------------------
+        # DEPENDENT ITEMS — alert.list
+        # -------------------------
+        - uuid: 70366ffda6804071814214e686e49fe5
+          name: "TrueNAS: Active alert count"
+          type: DEPENDENT
+          key: "truenas.alert.count"
+          master_item:
+            key: "truenas.alert.list.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.length()"
+          tags:
+            - tag: component
+              value: system
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 8d4b3d64f93f4e39884b1e4fc646a903
+              name: "TrueNAS: Active system alerts on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.alert.count)>0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.alert.count)=0"
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: system
+
+
+
+        - uuid: 26807ee9235346648c5345b163c36d33
+          name: "TrueNAS: Service list (raw)"
+          type: HTTP_AGENT
+          key: "truenas.service.list.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/service"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "60"
+          history: "1h"
+          tags:
+            - tag: component
+              value: system
+          description: "Master item — raw JSON from /api/v2.0/service"
+
+        - uuid: 889c25ea71194b0d9a7621b6feffadd7
+          name: "TrueNAS: Dataset list (raw)"
+          type: HTTP_AGENT
+          key: "truenas.dataset.list.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/pool/dataset"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "300"
+          history: "1h"
+          tags:
+            - tag: component
+              value: storage
+          description: "Master item — raw JSON from /api/v2.0/pool/dataset"
+
+        - uuid: 8be98b6ca91042dcbed36b57767e93c6
+          name: "TrueNAS: Boot pool state (raw)"
+          type: HTTP_AGENT
+          key: "truenas.boot.state.raw"
+          url: "{$TRUENAS.URL}/api/v2.0/boot/get_state"
+          headers:
+            - name: Authorization
+              value: "Bearer {$TRUENAS.API.KEY}"
+          value_type: TEXT
+          trends: "0"
+          delay: "120"
+          history: "1h"
+          tags:
+            - tag: component
+              value: storage
+          description: "Master item — raw JSON from /api/v2.0/boot/get_state"
+
+        # -------------------------
+        # DEPENDENT ITEMS — boot.state
+        # -------------------------
+        - uuid: 3823d1984a9e4b87a054848811938041
+          name: "TrueNAS: Boot pool status"
+          type: DEPENDENT
+          key: "truenas.boot.status"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.status"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 6d2d0a1eb11344eb91fcb82531b58102
+              name: "TrueNAS: Boot pool is not ONLINE on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.boot.status)<>\"ONLINE\""
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.boot.status)=\"ONLINE\""
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+
+        - uuid: 31dbe14cdad341a0ba7325705fde3dce
+          name: "TrueNAS: Boot pool healthy"
+          type: DEPENDENT
+          key: "truenas.boot.healthy"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.healthy"
+            - type: BOOL_TO_DECIMAL
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 80d10d6bac634b9f9d263bf64f7958b4
+              name: "TrueNAS: Boot pool is unhealthy on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.boot.healthy)=0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.boot.healthy)=1"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+
+        - uuid: 49449b40eb624024836340bd1699666a
+          name: "TrueNAS: Boot pool size"
+          type: DEPENDENT
+          key: "truenas.boot.size"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: FLOAT
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.size"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: capacity
+
+        - uuid: f240a3c681f94e5b89ae78f7e24c1223
+          name: "TrueNAS: Boot pool allocated"
+          type: DEPENDENT
+          key: "truenas.boot.allocated"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: FLOAT
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.allocated"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: capacity
+
+        - uuid: 35b2adb3bba04fe8be632205e1b99bbe
+          name: "TrueNAS: Boot pool free"
+          type: DEPENDENT
+          key: "truenas.boot.free"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: FLOAT
+          units: B
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.free"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: capacity
+
+        - uuid: 482191fdde2c4a0aab3332ab59a6e05a
+          name: "TrueNAS: Boot pool scrub state"
+          type: DEPENDENT
+          key: "truenas.boot.scan.state"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: CHAR
+          trends: "0"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.scan.state"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "NONE"
+            - type: JAVASCRIPT
+              parameters:
+                - "return value === 'null' || value === null ? 'NONE' : value;"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+
+        - uuid: f3be9653316d4abe987f8f1ab7c826ad
+          name: "TrueNAS: Boot pool scrub errors"
+          type: DEPENDENT
+          key: "truenas.boot.scan.errors"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.scan.errors"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "0"
+            - type: JAVASCRIPT
+              parameters:
+                - "return value === 'null' || value === null ? '0' : value;"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: b65f633dcb454dc49f195dc5d90c8f9b
+              name: "TrueNAS: Boot pool scrub reported errors on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.boot.scan.errors)>0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.boot.scan.errors)=0"
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+
+        - uuid: a481b8ad04504471b35eafa33936c328
+          name: "TrueNAS: Boot pool vdev read errors"
+          type: DEPENDENT
+          key: "truenas.boot.vdev.read_errors"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.topology.data[0].stats.read_errors"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "0"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+
+        - uuid: 0214cd768f474447ae88b59919228cb7
+          name: "TrueNAS: Boot pool vdev write errors"
+          type: DEPENDENT
+          key: "truenas.boot.vdev.write_errors"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.topology.data[0].stats.write_errors"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "0"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+
+        - uuid: 4a01dbe11ec5458ea25c1a1696671284
+          name: "TrueNAS: Boot pool vdev checksum errors"
+          type: DEPENDENT
+          key: "truenas.boot.vdev.checksum_errors"
+          master_item:
+            key: "truenas.boot.state.raw"
+          value_type: UNSIGNED
+          trends: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.topology.data[0].stats.checksum_errors"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: "0"
+          tags:
+            - tag: component
+              value: storage
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: 69e01a2ae73a4cfb805300426dae9d0d
+              name: "TrueNAS: Boot pool vdev errors detected on {HOST.NAME}"
+              expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.boot.vdev.read_errors)>0
+                or last(/Template Storage TrueNAS SCALE/truenas.boot.vdev.write_errors)>0
+                or last(/Template Storage TrueNAS SCALE/truenas.boot.vdev.checksum_errors)>0
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.boot.vdev.read_errors)=0
+                and last(/Template Storage TrueNAS SCALE/truenas.boot.vdev.write_errors)=0
+                and last(/Template Storage TrueNAS SCALE/truenas.boot.vdev.checksum_errors)=0
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+      # -------------------------
+      # LLD RULES
+      # -------------------------
+      discovery_rules:
+        - uuid: 3ed9abffadc3449da8a87ce5522c9387
+          name: "TrueNAS: Pool discovery"
+          type: DEPENDENT
+          key: "truenas.pool.discovery"
+          master_item:
+            key: "truenas.pool.list.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$[*]"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#POOL.NAME}"
+              path: "$.name"
+            - lld_macro: "{#POOL.ID}"
+              path: "$.id"
+            - lld_macro: "{#POOL.PATH}"
+              path: "$.path"
+          item_prototypes:
+            - uuid: 7022beae3af0400f87527c706a258b2e
+              name: "TrueNAS: Pool [{#POOL.NAME}] status"
+              type: DEPENDENT
+              key: "truenas.pool.status[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: CHAR
+              trends: "0"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].status.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: availability
+
+            - uuid: 70dcf693686f415c87055a7a925173ad
+              name: "TrueNAS: Pool [{#POOL.NAME}] healthy"
+              type: DEPENDENT
+              key: "truenas.pool.healthy[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].healthy.first()"
+                - type: BOOL_TO_DECIMAL
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: availability
+
+            - uuid: 3ef8e5a836fb4bc98dc9c63cecfba931
+              name: "TrueNAS: Pool [{#POOL.NAME}] size"
+              type: DEPENDENT
+              key: "truenas.pool.size[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].size.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: capacity
+
+            - uuid: 32c617b40bc84b43ba1b5794358d9675
+              name: "TrueNAS: Pool [{#POOL.NAME}] allocated"
+              type: DEPENDENT
+              key: "truenas.pool.allocated[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].allocated.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: capacity
+
+            - uuid: c53ed17f87f04ae29b11f6d299bdd35b
+              name: "TrueNAS: Pool [{#POOL.NAME}] free"
+              type: DEPENDENT
+              key: "truenas.pool.free[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].free.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: capacity
+
+            - uuid: 5774a79b3d5b4fe7a13bb323c9a35096
+              name: "TrueNAS: Pool [{#POOL.NAME}] fragmentation (%)"
+              type: DEPENDENT
+              key: "truenas.pool.fragmentation[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: FLOAT
+              units: "%"
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].fragmentation.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: performance
+
+            - uuid: ef5a0944fb5446bcacf714bac0bea890
+              name: "TrueNAS: Pool [{#POOL.NAME}] scrub state"
+              type: DEPENDENT
+              key: "truenas.pool.scan.state[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: CHAR
+              trends: "0"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].scan.state.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "NONE"
+                - type: JAVASCRIPT
+                  parameters:
+                    - "return value === 'null' || value === null ? 'NONE' : value;"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: availability
+
+            - uuid: cbcf7285ac0642df9b473689ca36dd3e
+              name: "TrueNAS: Pool [{#POOL.NAME}] scrub errors"
+              type: DEPENDENT
+              key: "truenas.pool.scan.errors[{#POOL.NAME}]"
+              master_item:
+                key: "truenas.pool.list.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.name=='{#POOL.NAME}')].scan.errors.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "0"
+                - type: JAVASCRIPT
+                  parameters:
+                    - "return value === 'null' || value === null ? '0' : value;"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: availability
+
+          trigger_prototypes:
+            - uuid: 5fa9823561184dc19cc9aafcaca933fc
+              name: "TrueNAS: Pool [{#POOL.NAME}] is not ONLINE on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.pool.status[{#POOL.NAME}])<>\"ONLINE\""
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.pool.status[{#POOL.NAME}])=\"ONLINE\""
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+
+            - uuid: e97acb6668234e51b356e454778cd73a
+              name: "TrueNAS: Pool [{#POOL.NAME}] is unhealthy on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.pool.healthy[{#POOL.NAME}])=0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.pool.healthy[{#POOL.NAME}])=1"
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+
+            - uuid: 0d3d7dcb8a884a4f9c0b4e7c93d6cf36
+              name: "TrueNAS: Pool [{#POOL.NAME}] capacity critical (>{$TRUENAS.POOL.CAPACITY.HIGH}%) on {HOST.NAME}"
+              expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.pool.allocated[{#POOL.NAME}])
+                /last(/Template Storage TrueNAS SCALE/truenas.pool.size[{#POOL.NAME}])*100>{$TRUENAS.POOL.CAPACITY.HIGH}
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.pool.allocated[{#POOL.NAME}])
+                /last(/Template Storage TrueNAS SCALE/truenas.pool.size[{#POOL.NAME}])*100<{$TRUENAS.POOL.CAPACITY.WARN}
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: capacity
+                - tag: component
+                  value: storage
+
+            - uuid: cd99e981c7514457a77b1534be06ba05
+              name: "TrueNAS: Pool [{#POOL.NAME}] capacity warning (>{$TRUENAS.POOL.CAPACITY.WARN}%) on {HOST.NAME}"
+              expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.pool.allocated[{#POOL.NAME}])
+                /last(/Template Storage TrueNAS SCALE/truenas.pool.size[{#POOL.NAME}])*100>{$TRUENAS.POOL.CAPACITY.WARN}
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.pool.allocated[{#POOL.NAME}])
+                /last(/Template Storage TrueNAS SCALE/truenas.pool.size[{#POOL.NAME}])*100<{$TRUENAS.POOL.CAPACITY.WARN}
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: capacity
+                - tag: component
+                  value: storage
+
+            - uuid: 22794438cf754268a4107fa04e6b3f19
+              name: "TrueNAS: Pool [{#POOL.NAME}] scrub reported errors on {HOST.NAME}"
+              expression: "last(/Template Storage TrueNAS SCALE/truenas.pool.scan.errors[{#POOL.NAME}])>0"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: "last(/Template Storage TrueNAS SCALE/truenas.pool.scan.errors[{#POOL.NAME}])=0"
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: storage
+
+        - uuid: 3ff8fdb4742c4b569c94046074d5d86e
+          name: "TrueNAS: Disk discovery"
+          type: DEPENDENT
+          key: "truenas.disk.discovery"
+          master_item:
+            key: "truenas.disk.list.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$[*]"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#DISK.NAME}"
+              path: "$.name"
+            - lld_macro: "{#DISK.SERIAL}"
+              path: "$.serial"
+            - lld_macro: "{#DISK.MODEL}"
+              path: "$.model"
+            - lld_macro: "{#DISK.TYPE}"
+              path: "$.type"
+          item_prototypes:
+            - uuid: fadb771f8197494fba949c661ccdf8b7
+              name: "TrueNAS: Disk [{#DISK.NAME}] size"
+              type: DEPENDENT
+              key: "truenas.disk.size[{#DISK.SERIAL}]"
+              master_item:
+                key: "truenas.disk.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.serial=='{#DISK.SERIAL}')].size.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: inventory
+
+            - uuid: 0a7a210da5e34887822be60f65d2a08d
+              name: "TrueNAS: Disk [{#DISK.NAME}] pool assignment"
+              type: DEPENDENT
+              key: "truenas.disk.pool[{#DISK.SERIAL}]"
+              master_item:
+                key: "truenas.disk.list.raw"
+              value_type: CHAR
+              trends: "0"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.serial=='{#DISK.SERIAL}')].pool.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: "unassigned"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: inventory
+
+        - uuid: ac6620da5f654835a59211681075940a
+          name: "TrueNAS: Service discovery"
+          type: DEPENDENT
+          key: "truenas.service.discovery"
+          master_item:
+            key: "truenas.service.list.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$[*]"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#SERVICE.NAME}"
+              path: "$.service"
+            - lld_macro: "{#SERVICE.ID}"
+              path: "$.id"
+          item_prototypes:
+            - uuid: 5ed533154ab543e6addb25321abcb209
+              name: "TrueNAS: Service [{#SERVICE.NAME}] state"
+              type: DEPENDENT
+              key: "truenas.service.state[{#SERVICE.NAME}]"
+              master_item:
+                key: "truenas.service.list.raw"
+              value_type: CHAR
+              trends: "0"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.service=='{#SERVICE.NAME}')].state.first()"
+              tags:
+                - tag: component
+                  value: system
+                - tag: scope
+                  value: availability
+
+            - uuid: 4e9810f3b1a7479eb22a27e8f382c6c2
+              name: "TrueNAS: Service [{#SERVICE.NAME}] enabled"
+              type: DEPENDENT
+              key: "truenas.service.enabled[{#SERVICE.NAME}]"
+              master_item:
+                key: "truenas.service.list.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.service=='{#SERVICE.NAME}')].enable.first()"
+                - type: BOOL_TO_DECIMAL
+              tags:
+                - tag: component
+                  value: system
+                - tag: scope
+                  value: inventory
+
+          trigger_prototypes:
+            - uuid: 7f2761f568b74aafa6b4d0acc1ca9643
+              name: "TrueNAS: Service [{#SERVICE.NAME}] is enabled but not running on {HOST.NAME}"
+              expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.service.enabled[{#SERVICE.NAME}])=1
+                and last(/Template Storage TrueNAS SCALE/truenas.service.state[{#SERVICE.NAME}])<>"RUNNING"
+              recovery_mode: RECOVERY_EXPRESSION
+              recovery_expression: |
+                last(/Template Storage TrueNAS SCALE/truenas.service.state[{#SERVICE.NAME}])="RUNNING"
+                or last(/Template Storage TrueNAS SCALE/truenas.service.enabled[{#SERVICE.NAME}])=0
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: system
+
+        - uuid: 4ce50d05108d4dbcb008a09d27e2696d
+          name: "TrueNAS: Dataset discovery"
+          type: DEPENDENT
+          key: "truenas.dataset.discovery"
+          master_item:
+            key: "truenas.dataset.list.raw"
+          delay: "300"
+          lifetime: "7d"
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$[*]"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - "1h"
+          lld_macro_paths:
+            - lld_macro: "{#DATASET.NAME}"
+              path: "$.name"
+            - lld_macro: "{#DATASET.ID}"
+              path: "$.id"
+            - lld_macro: "{#DATASET.POOL}"
+              path: "$.pool"
+          item_prototypes:
+            - uuid: 1a2643ae84e7476c8709a740122e336a
+              name: "TrueNAS: Dataset [{#DATASET.NAME}] used"
+              type: DEPENDENT
+              key: "truenas.dataset.used[{#DATASET.ID}]"
+              master_item:
+                key: "truenas.dataset.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.id=='{#DATASET.ID}')].used.parsed.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: capacity
+
+            - uuid: 017932c67d9c4d59bd7d71f98ff2c9b4
+              name: "TrueNAS: Dataset [{#DATASET.NAME}] available"
+              type: DEPENDENT
+              key: "truenas.dataset.available[{#DATASET.ID}]"
+              master_item:
+                key: "truenas.dataset.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.id=='{#DATASET.ID}')].available.parsed.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: capacity
+
+            - uuid: b6d61196c2ec4278aa75b930bbee08bb
+              name: "TrueNAS: Dataset [{#DATASET.NAME}] used by snapshots"
+              type: DEPENDENT
+              key: "truenas.dataset.usedbysnapshots[{#DATASET.ID}]"
+              master_item:
+                key: "truenas.dataset.list.raw"
+              value_type: FLOAT
+              units: B
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.id=='{#DATASET.ID}')].usedbysnapshots.parsed.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: capacity
+
+            - uuid: 1b5ad9ed425e452a8bc88997d06d4913
+              name: "TrueNAS: Dataset [{#DATASET.NAME}] compression ratio"
+              type: DEPENDENT
+              key: "truenas.dataset.compressratio[{#DATASET.ID}]"
+              master_item:
+                key: "truenas.dataset.list.raw"
+              value_type: FLOAT
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.id=='{#DATASET.ID}')].compressratio.parsed.first()"
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: performance
+
+            - uuid: a3dc6430bbf848938d06615d7519bb04
+              name: "TrueNAS: Dataset [{#DATASET.NAME}] encryption"
+              type: DEPENDENT
+              key: "truenas.dataset.encrypted[{#DATASET.ID}]"
+              master_item:
+                key: "truenas.dataset.list.raw"
+              value_type: UNSIGNED
+              trends: "7d"
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$[?(@.id=='{#DATASET.ID}')].encrypted.first()"
+                - type: BOOL_TO_DECIMAL
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: inventory
+

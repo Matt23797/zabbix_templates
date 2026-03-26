@@ -1,0 +1,296 @@
+zabbix_export:
+  version: '8.0'
+  template_groups:
+    - uuid: 799fa487080d4c80b616a27fd10e9cdb
+      name: Templates
+  templates:
+    - uuid: 4609a5dd056c45e4b1f5c12055f67fa7
+      template: Mikrotik-Routing-by-HTTP
+      name: Mikrotik-Routing-by-HTTP
+      description: |
+        MikroTik RouterOS REST API monitoring — BGP and OSPF routing protocol state.
+        Parent template: link to per-model MikroTik templates as needed.
+        Requires macros {$ROS_USER} and {$ROS_PASS} set on each host.
+        Requires RouterOS 7.1+ for REST API support.
+      groups:
+        - name: Templates
+      items:
+        - uuid: 404f2e182f3141bebbc86ade5e293197
+          name: 'System Scheduler'
+          type: HTTP_AGENT
+          key: ros.system.scheduler
+          delay: 15m
+          history: 7d
+          value_type: TEXT
+          authtype: BASIC
+          username: '{$ROS_USER}'
+          password: '{$ROS_PASS}'
+          description: 'Full list of RouterOS scheduled tasks as JSON. Master item for dependent parsing items.'
+          url: 'http://{HOST.CONN}/rest/system/scheduler'
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+        - uuid: 7f093b748d5e455f8e7053ceec1dc7ad
+          name: 'System Scheduler: Count'
+          type: DEPENDENT
+          key: ros.system.scheduler.count
+          history: 7d
+          value_type: FLOAT
+          description: 'Number of scheduler entries present on the device.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$[*].name'
+            - type: JAVASCRIPT
+              parameters:
+                - 'return JSON.parse(value).length;'
+          master_item:
+            key: ros.system.scheduler
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+        - uuid: 5ed5a9b5458f4aba8a587fbdc15ff089
+          name: 'System Scheduler: Names'
+          type: DEPENDENT
+          key: ros.system.scheduler.names
+          history: 7d
+          value_type: TEXT
+          description: 'List of scheduler entry names extracted from /system/scheduler.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$[*].name'
+          master_item:
+            key: ros.system.scheduler
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+        - uuid: 6f542902dfe045f9a245f453cf11cdf5
+          name: 'System Scheduler: On-Event Scripts'
+          type: DEPENDENT
+          key: ros.system.scheduler.onevents
+          history: 7d
+          value_type: TEXT
+          description: 'List of scripts/commands scheduled to run, from the on-event field of each scheduler entry.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$[*][''on-event'']'
+          master_item:
+            key: ros.system.scheduler
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+        - uuid: 7ae92e7ea93f4370bd807a305847d4ed
+          name: 'System Scripts'
+          type: HTTP_AGENT
+          key: ros.system.scripts
+          delay: 15m
+          history: 7d
+          value_type: TEXT
+          authtype: BASIC
+          username: '{$ROS_USER}'
+          password: '{$ROS_PASS}'
+          description: 'Full list of RouterOS scripts as JSON. Master item for dependent parsing items.'
+          url: 'http://{HOST.CONN}/rest/system/script'
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+        - uuid: e26ca8a742ea426ab5a3098bc1e29781
+          name: 'System Scripts: Count'
+          type: DEPENDENT
+          key: ros.system.scripts.count
+          history: 7d
+          value_type: FLOAT
+          description: 'Number of scripts present on the device.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$[*].name'
+            - type: JAVASCRIPT
+              parameters:
+                - 'return JSON.parse(value).length;'
+          master_item:
+            key: ros.system.scripts
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+          triggers:
+            - uuid: 2135735c6d3540bdb2b1a823ec476b74
+              expression: 'change(/Mikrotik-Routing-by-HTTP/ros.system.scripts.count)<>0 and last(/Mikrotik-Routing-by-HTTP/ros.system.scripts.count)>=0'
+              name: 'System Scripts: Count changed'
+              priority: WARNING
+              description: 'The number of scripts on this device has changed. Current count: {ITEM.VALUE}. Review /system/script to verify the change is expected.'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: configuration
+                - tag: scope
+                  value: compliance
+        - uuid: 7adf8b2b7ae342baac01aae932bff66e
+          name: 'System Scripts: Names'
+          type: DEPENDENT
+          key: ros.system.scripts.names
+          history: 7d
+          value_type: TEXT
+          description: 'List of script names extracted from /system/script.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$[*].name'
+          master_item:
+            key: ros.system.scripts
+          tags:
+            - tag: component
+              value: configuration
+            - tag: scope
+              value: compliance
+      discovery_rules:
+        - uuid: 74408a2bc28d47a18ed5488f64cd4212
+          name: 'BGP Peer Discovery'
+          type: HTTP_AGENT
+          key: ros.bgp.peer.discovery
+          delay: 5m
+          authtype: BASIC
+          username: '{$ROS_USER}'
+          password: '{$ROS_PASS}'
+          lifetime: 30d
+          item_prototypes:
+            - uuid: 9be9d04b2b2b465db72cd1c99a6ea5fb
+              name: 'BGP Peer {#BGP.NAME} ({#BGP.REMOTE}): State'
+              type: HTTP_AGENT
+              key: 'ros.bgp.peer.state[{#BGP.NAME}]'
+              history: 7d
+              value_type: CHAR
+              authtype: BASIC
+              username: '{$ROS_USER}'
+              password: '{$ROS_PASS}'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.state
+              url: 'https://{HOST.CONN}/rest/routing/bgp/peer/{#BGP.ID}'
+              tags:
+                - tag: component
+                  value: bgp
+                - tag: scope
+                  value: availability
+              trigger_prototypes:
+                - uuid: 211d2b99ca714e5399d62e73366c4ed1
+                  expression: 'last(/Mikrotik-Routing-by-HTTP/ros.bgp.peer.state[{#BGP.NAME}])<>"established"'
+                  name: 'BGP Peer {#BGP.NAME} ({#BGP.REMOTE}): Session not established'
+                  priority: HIGH
+                  description: 'BGP session to {#BGP.REMOTE} ({#BGP.NAME}) is not in established state.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: bgp
+                    - tag: scope
+                      value: availability
+          url: 'http://{HOST.CONN}/rest/routing/bgp/peer'
+          lld_macro_paths:
+            - lld_macro: '{#BGP.ID}'
+              path: '$[*][''.id'']'
+            - lld_macro: '{#BGP.NAME}'
+              path: '$[*][''name'']'
+            - lld_macro: '{#BGP.REMOTE}'
+              path: '$[*][''remote-address'']'
+        - uuid: 693bd83d2dff40e18b42aa7ca6cc4b72
+          name: 'OSPF Neighbor Discovery'
+          type: HTTP_AGENT
+          key: ros.ospf.neighbor.discovery
+          delay: 5m
+          authtype: BASIC
+          username: '{$ROS_USER}'
+          password: '{$ROS_PASS}'
+          lifetime: 30d
+          item_prototypes:
+            - uuid: 45a686fc8ed64651977ba0c211430ade
+              name: 'OSPF Neighbor {#OSPF.ROUTERID} ({#OSPF.ADDRESS}): Cost'
+              type: HTTP_AGENT
+              key: 'ros.ospf.neighbor.cost[{#OSPF.ROUTERID}]'
+              history: 7d
+              value_type: FLOAT
+              authtype: BASIC
+              username: '{$ROS_USER}'
+              password: '{$ROS_PASS}'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$[0].cost'
+              url: 'https://{HOST.CONN}/rest/routing/ospf/neighbor?router-id={#OSPF.ROUTERID}'
+              tags:
+                - tag: component
+                  value: ospf
+                - tag: scope
+                  value: performance
+              trigger_prototypes:
+                - uuid: b913e02a65ef4934b699a3fffdd7efb0
+                  expression: 'change(/Mikrotik-Routing-by-HTTP/ros.ospf.neighbor.cost[{#OSPF.ROUTERID}])<>0 and last(/Mikrotik-Routing-by-HTTP/ros.ospf.neighbor.cost[{#OSPF.ROUTERID}])>0'
+                  name: 'OSPF Neighbor {#OSPF.ROUTERID} ({#OSPF.ADDRESS}): Cost changed'
+                  priority: AVERAGE
+                  description: 'OSPF cost to neighbor {#OSPF.ROUTERID} ({#OSPF.ADDRESS}) via {#OSPF.INTERFACE} has changed. Current value: {ITEM.VALUE}. This may indicate a topology or link quality change.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: ospf
+                    - tag: scope
+                      value: performance
+            - uuid: edaf4331215d414f93e56e9fe4e0b5fb
+              name: 'OSPF Neighbor {#OSPF.ROUTERID} ({#OSPF.ADDRESS}): State'
+              type: HTTP_AGENT
+              key: 'ros.ospf.neighbor.state[{#OSPF.ROUTERID}]'
+              history: 7d
+              value_type: CHAR
+              authtype: BASIC
+              username: '{$ROS_USER}'
+              password: '{$ROS_PASS}'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$[0].state'
+              url: 'https://{HOST.CONN}/rest/routing/ospf/neighbor?router-id={#OSPF.ROUTERID}'
+              tags:
+                - tag: component
+                  value: ospf
+                - tag: scope
+                  value: availability
+              trigger_prototypes:
+                - uuid: 7864b764f8444e5e96acf8a3b32d7ece
+                  expression: 'last(/Mikrotik-Routing-by-HTTP/ros.ospf.neighbor.state[{#OSPF.ROUTERID}])<>"Full"'
+                  name: 'OSPF Neighbor {#OSPF.ROUTERID} ({#OSPF.ADDRESS}): Not in Full state'
+                  priority: HIGH
+                  description: 'OSPF neighbor {#OSPF.ROUTERID} on interface {#OSPF.INTERFACE} is not in Full state. Current state: {ITEM.VALUE}.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: ospf
+                    - tag: scope
+                      value: availability
+          url: 'http://{HOST.CONN}/rest/routing/ospf/neighbor'
+          lld_macro_paths:
+            - lld_macro: '{#OSPF.ADDRESS}'
+              path: '$[*][''address'']'
+            - lld_macro: '{#OSPF.INTERFACE}'
+              path: '$[*][''interface'']'
+            - lld_macro: '{#OSPF.ROUTERID}'
+              path: '$[*][''router-id'']'
+      macros:
+        - macro: '{$ROS_PASS}'
+          type: SECRET_TEXT
+          description: 'RouterOS REST API password'
+        - macro: '{$ROS_USER}'
+          value: zabbix
+          description: 'RouterOS REST API username'
