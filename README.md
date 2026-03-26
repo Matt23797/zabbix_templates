@@ -44,4 +44,4 @@ See [`/truenas/README.md`](./truenas/README.md) for setup instructions and macro
 
 ## Contributing
 
-Issues and pull requests welcome. If a template saves you time, consider sponsoring via GitHub Sponsors or Ko-fi.
+Issues and pull requests welcome. If a template saves you time, consider sponsoring via Buy Me a Coffee. Thanks!
